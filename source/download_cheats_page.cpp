@@ -193,40 +193,54 @@ DownloadCheatsPage_CheatSlips::DownloadCheatsPage_CheatSlips(uint64_t tid, const
         brls::LabelStyle::DESCRIPTION,
         "menus/cheats/cheatslips_dl"_i18n +
             "\n\uE016 Title ID: " + util::formatApplicationId(this->tid) +
-            "\n\uE016 Build ID: " + this->bid,
+            "\n\uE016 Build ID: " + (this->bid.empty() ? "All (Not Found)" : this->bid),
         true);
     this->list->addView(this->label);
 
+    std::vector<std::string> headers = {"accept: application/json"};
+    nlohmann::ordered_json cheatsInfo;
+    std::string url = CHEATSLIPS_CHEATS_URL + util::formatApplicationId(this->tid);
     if (this->bid != "") {
-        std::vector<std::string> headers = {"accept: application/json"};
-        nlohmann::ordered_json cheatsInfo;
-        download::getRequest(CHEATSLIPS_CHEATS_URL + util::formatApplicationId(this->tid) + "/" + this->bid, cheatsInfo, headers);
-        if (cheatsInfo.find("cheats") != cheatsInfo.end()) {
-            for (const auto& p : cheatsInfo.at("cheats").items()) {
-                json cheat = p.value();
-                listItem = new brls::ToggleListItem(GetCheatsTitle(cheat), 0, "", "\uE016", "o");
-                this->listItem->registerAction("menus/cheats/cheatslips_see_more"_i18n, brls::Key::Y, [this, cheat] {
-                    if (cheat.find("titles") != cheat.end()) {
-                        ShowCheatsContent(cheat.at("titles"));
-                    }
-                    return true;
-                });
-                this->toggles.push_back(std::make_pair(listItem, cheat.at("id")));
-                list->addView(listItem);
+        url += "/" + this->bid;
+    }
+    download::getRequest(url, cheatsInfo, headers);
+
+    bool foundCheats = false;
+    nlohmann::ordered_json items = nlohmann::ordered_json::array();
+    if (cheatsInfo.find("cheats") != cheatsInfo.end()) {
+        items = cheatsInfo.at("cheats");
+        foundCheats = true;
+    }
+
+    if (foundCheats) {
+        for (const auto& p : items.items()) {
+            json cheat = p.value();
+            std::string cheatTitle = GetCheatsTitle(cheat);
+            if (this->bid == "" && cheat.find("buildid") != cheat.end()) {
+                cheatTitle = "[" + cheat.at("buildid").get<std::string>() + "] " + cheatTitle;
             }
-            if (this->list->getViewsCount() > 1)
-                this->list->addView(new brls::ListItemGroupSpacing(true));
+            listItem = new brls::ToggleListItem(cheatTitle, 0, "", "\uE016", "o");
+            this->listItem->registerAction("menus/cheats/cheatslips_see_more"_i18n, brls::Key::Y, [this, cheat] {
+                if (cheat.find("titles") != cheat.end()) {
+                    ShowCheatsContent(cheat.at("titles"));
+                }
+                return true;
+            });
+            this->toggles.push_back(std::make_pair(listItem, cheat.at("id")));
+            list->addView(listItem);
         }
-        else {
-            ShowCheatsNotFound();
-        }
+        if (this->list->getViewsCount() > 1)
+            this->list->addView(new brls::ListItemGroupSpacing(true));
     }
-
     else {
-        ShowBidNotFound();
+        if (this->bid != "") {
+            ShowCheatsNotFound();
+        } else {
+            ShowBidNotFound();
+        }
     }
 
-    this->list->registerAction((this->bid != "") ? "menus/cheats/cheatslips_dl_cheats"_i18n : "brls/hints/back"_i18n, brls::Key::B, [this] {
+    this->list->registerAction((this->bid != "" || foundCheats) ? "menus/cheats/cheatslips_dl_cheats"_i18n : "brls/hints/back"_i18n, brls::Key::B, [this] {
         std::vector<int> ids;
         for (auto& e : toggles) {
             if (e.first->getToggleState()) {
@@ -244,15 +258,33 @@ DownloadCheatsPage_CheatSlips::DownloadCheatsPage_CheatSlips(uint64_t tid, const
                 headers.push_back("X-API-TOKEN: " + token.at("token").get<std::string>());
             }
             nlohmann::ordered_json cheatsInfo;
-            download::getRequest("https://www.cheatslips.com/api/v1/cheats/" + util::formatApplicationId(this->tid) + "/" + this->bid, cheatsInfo, headers);
+            std::string dl_url = "https://www.cheatslips.com/api/v1/cheats/" + util::formatApplicationId(this->tid);
+            if (this->bid != "") {
+                dl_url += "/" + this->bid;
+            }
+            download::getRequest(dl_url, cheatsInfo, headers);
+            
+            bool foundCheatsDl = false;
+            nlohmann::ordered_json itemsDl = nlohmann::ordered_json::array();
             if (cheatsInfo.find("cheats") != cheatsInfo.end()) {
-                for (const auto& p : cheatsInfo.at("cheats").items()) {
+                itemsDl = cheatsInfo.at("cheats");
+                foundCheatsDl = true;
+            }
+
+            if (foundCheatsDl) {
+                for (const auto& p : itemsDl.items()) {
                     if (std::find(ids.begin(), ids.end(), p.value().at("id")) != ids.end()) {
                         if (p.value().at("content").get<std::string>() == "Quota exceeded for today !") {
                             error = 1;
                         }
                         else {
-                            WriteCheats(p.value().at("content"));
+                            std::string cheatBid = this->bid != "" ? this->bid : p.value().at("buildid").get<std::string>();
+                            std::string path = util::getContentsPath() + util::formatApplicationId(this->tid) + "/cheats/";
+                            fs::createTree(path);
+                            std::ofstream cheatFile(path + cheatBid + ".txt", std::ios::app);
+                            cheatFile << "\n\n"
+                                      << p.value().at("content").get<std::string>();
+                            cheatFile.close();
                         }
                     }
                 }
