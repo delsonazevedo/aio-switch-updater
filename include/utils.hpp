@@ -22,6 +22,7 @@ namespace util {
         brls::ListItem* listItem;
     } app;
 
+    void decompressNacpIfNeeded(NacpStruct* nacp);
     void clearConsole();
     bool isArchive(const std::string& path);
     void downloadArchive(const std::string& url, contentType type);

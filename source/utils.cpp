@@ -15,6 +15,7 @@
 #include "progress_event.hpp"
 #include "reboot_payload.h"
 #include "unistd.h"
+#include <zlib.h>
 
 namespace i18n = brls::i18n;
 using namespace i18n::literals;
@@ -33,6 +34,42 @@ namespace util {
             }
         }
         return false;
+    }
+
+    void decompressNacpIfNeeded(NacpStruct* nacp)
+    {
+        u8* nacpBytes = (u8*)nacp;
+        // Check if NACP title block is compressed (flag byte at 0x3215 != 0)
+        if (nacpBytes[0x3215] != 0) {
+            u16 compressed_size = *(u16*)nacpBytes;
+            if (compressed_size > 0 && compressed_size <= 0x3000) {
+                // The new compressed title block supports up to 32 languages, which decompresses to 0x6000 bytes.
+                // We only need the first 0x3000 bytes (16 legacy languages) for libnx.
+                u32 max_decompressed_size = 0x6000;
+                u8* decompressed = (u8*)calloc(1, max_decompressed_size);
+                if (decompressed) {
+                    z_stream strm;
+                    strm.zalloc = Z_NULL;
+                    strm.zfree = Z_NULL;
+                    strm.opaque = Z_NULL;
+                    strm.avail_in = compressed_size;
+                    strm.next_in = nacpBytes + 2;
+                    strm.avail_out = max_decompressed_size;
+                    strm.next_out = decompressed;
+
+                    // -15 for raw deflate
+                    if (inflateInit2(&strm, -15) == Z_OK) {
+                        int ret = inflate(&strm, Z_NO_FLUSH);
+                        if (ret == Z_STREAM_END || ret == Z_OK) {
+                            // Copy back only the first 0x3000 bytes (which fits in the NACP title block space)
+                            memcpy(nacpBytes, decompressed, 0x3000);
+                        }
+                        inflateEnd(&strm);
+                    }
+                    free(decompressed);
+                }
+            }
+        }
     }
 
     void downloadArchive(const std::string& url, contentType type)
