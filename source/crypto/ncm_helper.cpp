@@ -7,15 +7,10 @@
 namespace crypto {
 
 std::string FindMainNcaPath(uint64_t title_id) {
-    {
-        std::ofstream log("sdmc:/config/aio-switch-updater/crypto_debug.txt", std::ios::app);
-        if (R_FAILED(lrInitialize())) { log << "ncm: lrInitialize failed\n"; return ""; }
-    }
+    if (R_FAILED(lrInitialize())) { return ""; }
 
     LrRegisteredLocationResolver reg;
     if (R_FAILED(lrOpenRegisteredLocationResolver(&reg))) {
-        std::ofstream log("sdmc:/config/aio-switch-updater/crypto_debug.txt", std::ios::app);
-        log << "ncm: lrOpenRegistered failed\n";
         lrExit();
         return "";
     }
@@ -26,9 +21,6 @@ std::string FindMainNcaPath(uint64_t title_id) {
     lrExit();
 
     if (R_FAILED(rc)) {
-        std::ofstream log("sdmc:/config/aio-switch-updater/crypto_debug.txt", std::ios::app);
-        log << "ncm: lrRegLrResolveProgramPath failed " << std::hex << rc << ", trying LrLocationResolver...\n";
-        
         if (R_SUCCEEDED(lrInitialize())) {
             LrLocationResolver loc;
             if (R_SUCCEEDED(lrOpenLocationResolver(NcmStorageId_SdCard, &loc))) {
@@ -43,16 +35,11 @@ std::string FindMainNcaPath(uint64_t title_id) {
         }
 
         if (R_FAILED(rc)) {
-            log << "ncm: all lr paths failed\n";
             return "";
         }
     }
 
     std::string str_path = path;
-    {
-        std::ofstream log("sdmc:/config/aio-switch-updater/crypto_debug.txt", std::ios::app);
-        log << "ncm: raw path = '" << str_path << "'\n";
-    }
     
     // Replace mounts
     if (str_path.find("@SdCardContent://") == 0) {
