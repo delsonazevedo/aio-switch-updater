@@ -4,6 +4,8 @@
 #include <fstream>
 
 #include "constants.hpp"
+#include "crypto/nca.hpp"
+#include "crypto/keys.hpp"
 #include "current_cfw.hpp"
 #include "download.hpp"
 #include "extract.hpp"
@@ -148,6 +150,16 @@ void DownloadCheatsPage::GetBuildIDFromFile()
     }
     else {
         this->bid = "";
+    }
+
+    if (this->bid == "") {
+        if (!crypto::g_keys.loaded) {
+            crypto::LoadKeys(crypto::g_keys);
+        }
+        std::string nca_path = crypto::FindMainNcaPath(this->tid);
+        if (nca_path != "") {
+            this->bid = crypto::GetBuildIdFromNca(nca_path);
+        }
     }
 }
 
